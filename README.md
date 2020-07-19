@@ -1,0 +1,1 @@
+Ray Tracing rendering for static scene, without lighting, refer to [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html#overview)
