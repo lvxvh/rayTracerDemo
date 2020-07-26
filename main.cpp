@@ -219,7 +219,7 @@ hittable_list final_scene() {
     boundary = make_shared<sphere>(point3(0, 0, 0), 5000, make_shared<dielectric>(1.5));
     objects.add(make_shared<constant_medium>(boundary, .0001, color(1,1,1)));
 
-    auto emat = make_shared<lambertian>(make_shared<image_texture>("earthmap.jpg"));
+    auto emat = make_shared<lambertian>(make_shared<image_texture>("../imgs/resources/earthmap.jpg"));
     objects.add(make_shared<sphere>(point3(400,200,400), 100, emat));
     auto pertext = make_shared<noise_texture>(0.1);
     objects.add(make_shared<sphere>(point3(220,280,300), 80, make_shared<lambertian>(pertext)));
@@ -317,7 +317,7 @@ int main() {
             world = final_scene();
             aspect_ratio = 1.0;
             image_width = 800;
-            samples_per_pixel = 10000;
+            samples_per_pixel = 1;
             background = color(0,0,0);
             lookfrom = point3(478, 278, -600);
             lookat = point3(278, 278, 0);
