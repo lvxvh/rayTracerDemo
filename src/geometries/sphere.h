@@ -6,7 +6,17 @@
 #define RAYTRACE_SPHERE_H
 
 #include "hittable.h"
-#include "vec3.h"
+#include "../utils/vec3.h"
+
+/*
+ * 获取某点的纹理坐标
+ */
+void get_sphere_uv(const vec3& p, double& u, double& v) {
+    auto phi = atan2(p.z(), p.x());
+    auto theta = asin(p.y());
+    u = 1-(phi + pi) / (2*pi);
+    v = (theta + pi/2) / pi;
+}
 
 class sphere: public hittable {
 public:
@@ -14,7 +24,8 @@ public:
     sphere(point3 cen, double r, shared_ptr<material> m)
             : center(cen), radius(r), mat_ptr(m) {};
 
-    virtual bool hit(const ray& r, double tmin, double tmax, hit_record& rec) const;
+    virtual bool hit(const ray& r, double tmin, double tmax, hit_record& rec) const override;
+    virtual bool bounding_box(double t0, double t1, aabb& output_box) const override;
 
 public:
     point3 center;
@@ -37,6 +48,7 @@ bool sphere::hit(const ray& r, double t_min, double t_max, hit_record& rec) cons
             rec.p = r.at(rec.t);
             vec3 outward_normal = (rec.p - center) / radius;
             rec.set_face_normal(r, outward_normal);
+            get_sphere_uv((rec.p-center)/radius, rec.u, rec.v); // 记录点的纹理坐标
             rec.mat_ptr = mat_ptr;
             return true;
         }
@@ -47,11 +59,21 @@ bool sphere::hit(const ray& r, double t_min, double t_max, hit_record& rec) cons
             rec.p = r.at(rec.t);
             vec3 outward_normal = (rec.p - center) / radius;
             rec.set_face_normal(r, outward_normal);
+            get_sphere_uv((rec.p-center)/radius, rec.u, rec.v);
             rec.mat_ptr = mat_ptr;
             return true;
         }
     }
     return false;
 }
+
+bool sphere::bounding_box(double t0, double t1, aabb& output_box) const {
+    output_box = aabb(
+            center - vec3(radius, radius, radius),
+            center + vec3(radius, radius, radius));
+    return true;
+}
+
+
 
 #endif //RAYTRACE_SPHERE_H

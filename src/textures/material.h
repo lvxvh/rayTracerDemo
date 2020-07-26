@@ -5,8 +5,9 @@
 #ifndef RAYTRACE_MATERIAL_H
 #define RAYTRACE_MATERIAL_H
 
-#include "ray.h"
-#include "hittable.h"
+#include "../../ray.h"
+#include "../geometries/hittable.h"
+#include "texture.h"
 
 double schlick(double cosine, double ref_idx) {
     auto r0 = (1-ref_idx) / (1+ref_idx);
@@ -16,6 +17,9 @@ double schlick(double cosine, double ref_idx) {
 
 class material {
 public:
+    virtual color emitted(double u, double v, const point3& p) const {
+        return color(0,0,0);
+    }
     virtual bool scatter(
             const ray& r_in, const hit_record& rec, color& attenuation, ray& scattered
     ) const = 0;
@@ -23,19 +27,21 @@ public:
 
 class lambertian : public material {
 public:
-    lambertian(const color& a) : albedo(a) {}
+    lambertian(const color& a) : albedo(make_shared<solid_color>(a)) {}
+    lambertian(shared_ptr<texture> a) : albedo(a) {}
 
     virtual bool scatter(
             const ray& r_in, const hit_record& rec, color& attenuation, ray& scattered
     ) const {
         vec3 scatter_direction = rec.normal + random_unit_vector();
-        scattered = ray(rec.p, scatter_direction);
-        attenuation = albedo;
+        scattered = ray(rec.p, scatter_direction, r_in.time());
+        attenuation = albedo->value(rec.u, rec.v, rec.p);
         return true;
     }
 
 public:
-    color albedo; // 反射率(三个通道上不同), albedo 比例的光被反射出去
+    shared_ptr<texture> albedo;
+    // 反射率(三个通道上不同), 就是颜色
 };
 
 class metal : public material {
@@ -97,6 +103,40 @@ public:
     double ref_idx;
 };
 
+class diffuse_light : public material  {
+public:
+    diffuse_light(shared_ptr<texture> a) : emit(a) {}
+    diffuse_light(color c) : emit(make_shared<solid_color>(c)) {}
 
+    virtual bool scatter(
+            const ray& r_in, const hit_record& rec, color& attenuation, ray& scattered
+    ) const override {
+        return false;
+    }
+
+    virtual color emitted(double u, double v, const point3& p) const override {
+        return emit->value(u, v, p);
+    }
+
+public:
+    shared_ptr<texture> emit;
+};
+
+class isotropic : public material {
+public:
+    isotropic(color c) : albedo(make_shared<solid_color>(c)) {}
+    isotropic(shared_ptr<texture> a) : albedo(a) {}
+
+    virtual bool scatter(
+            const ray& r_in, const hit_record& rec, color& attenuation, ray& scattered
+    ) const override {
+        scattered = ray(rec.p, random_in_unit_sphere(), r_in.time());
+        attenuation = albedo->value(rec.u, rec.v, rec.p);
+        return true;
+    }
+
+public:
+    shared_ptr<texture> albedo;
+};
 
 #endif //RAYTRACE_MATERIAL_H
