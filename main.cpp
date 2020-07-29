@@ -9,6 +9,7 @@
 #include "src/geometries/aarect.h"
 #include "src/geometries/box.h"
 #include "src/geometries/constant_medium.h"
+#include "src/utils/pdf.h"
 #include <iostream>
 
 color ray_color(const ray& r, const color& background, const hittable& world, int depth) {
@@ -22,12 +23,27 @@ color ray_color(const ray& r, const color& background, const hittable& world, in
 
     ray scattered;
     color attenuation;
-    color emitted = rec.mat_ptr->emitted(rec.u, rec.v, rec.p);
+    color emitted = rec.mat_ptr->emitted(r, rec, rec.u, rec.v, rec.p);
 
-    if (!rec.mat_ptr->scatter(r, rec, attenuation, scattered))
+    double pdf_val;
+    color albedo;
+
+    if (!rec.mat_ptr->scatter(r, rec, albedo, scattered, pdf_val))
         return emitted;
 
-    return emitted + attenuation * ray_color(scattered, background, world, depth-1);
+    shared_ptr<hittable> light_shape =
+            make_shared<xz_rect>(213, 343, 227, 332, 554, shared_ptr<material>());
+    auto p0 = make_shared<hittable_pdf>(light_shape, rec.p);
+    auto p1 = make_shared<cosine_pdf>(rec.normal);
+    mixture_pdf p(p0, p1);
+
+    scattered = ray(rec.p, p.generate(), r.time());
+    pdf_val = p.value(scattered.direction());
+
+    // 单个 采样点 对颜色的贡献 f(x)/p(x), f(x) =  A * s(x) * color(x)
+    return emitted
+           + albedo * rec.mat_ptr->scattering_pdf(r, rec, scattered)
+             * ray_color(scattered, background, world, depth-1) / pdf_val;
 
 }
 
@@ -130,7 +146,7 @@ hittable_list cornell_box() {
 
     objects.add(make_shared<yz_rect>(0, 555, 0, 555, 555, green));
     objects.add(make_shared<yz_rect>(0, 555, 0, 555, 0, red));
-    objects.add(make_shared<xz_rect>(213, 343, 227, 332, 554, light));
+    objects.add(make_shared<flip_face>(make_shared<xz_rect>(213, 343, 227, 332, 554, light)));
     objects.add(make_shared<xz_rect>(0, 555, 0, 555, 0, white));
     objects.add(make_shared<xz_rect>(0, 555, 0, 555, 555, white));
     objects.add(make_shared<xy_rect>(0, 555, 0, 555, 555, white));
@@ -154,11 +170,11 @@ hittable_list cornell_smoke() {
     auto red   = make_shared<lambertian>(color(.65, .05, .05));
     auto white = make_shared<lambertian>(color(.73, .73, .73));
     auto green = make_shared<lambertian>(color(.12, .45, .15));
-    auto light = make_shared<diffuse_light>(color(7, 7, 7));
+    auto light = make_shared<diffuse_light>(color(15, 15, 15));
 
     objects.add(make_shared<yz_rect>(0, 555, 0, 555, 555, green));
     objects.add(make_shared<yz_rect>(0, 555, 0, 555, 0, red));
-    objects.add(make_shared<xz_rect>(113, 443, 127, 432, 554, light));
+    objects.add(make_shared<xz_rect>(213, 343, 227, 332, 554, light));
     objects.add(make_shared<xz_rect>(0, 555, 0, 555, 555, white));
     objects.add(make_shared<xz_rect>(0, 555, 0, 555, 0, white));
     objects.add(make_shared<xy_rect>(0, 555, 0, 555, 555, white));
@@ -171,8 +187,8 @@ hittable_list cornell_smoke() {
     box2 = make_shared<rotate_y>(box2, -18);
     box2 = make_shared<translate>(box2, vec3(130,0,65));
 
-    objects.add(make_shared<constant_medium>(box1, 0.01, color(0,0,0)));
-    objects.add(make_shared<constant_medium>(box2, 0.01, color(1,1,1)));
+    objects.add(box1);
+    objects.add(box2);
 
     return objects;
 }
@@ -242,102 +258,46 @@ hittable_list final_scene() {
 }
 
 int main() {
-    auto aspect_ratio = 16.0 / 9.0;
-    int image_width = 400;
-    int samples_per_pixel = 400;
-    const int max_depth = 50;
+    // Image
 
-    hittable_list world;
+    const auto aspect_ratio = 1.0 / 1.0;
+    const int image_width = 600;
+    const int image_height = static_cast<int>(image_width / aspect_ratio);
+    const int samples_per_pixel = 10;
+    const int max_depth = 3;
 
-    point3 lookfrom;
-    point3 lookat;
-    auto vfov = 40.0;
-    auto aperture = 0.0;
+    // World
+
+    auto lights = make_shared<hittable_list>();
+    lights->add(make_shared<xz_rect>(213, 343, 227, 332, 554, shared_ptr<material>()));
+    lights->add(make_shared<sphere>(point3(190, 90, 190), 90, shared_ptr<material>()));
+
+    auto world = cornell_box();
+    auto bvh_tree = bvh_node(world, 0.0, 1.0); // add bvh structure
+
+
     color background(0,0,0);
 
-    switch (0) {
-        case 1:
-            world = random_scene();
-            background = color(0.70, 0.80, 1.00);
-            lookfrom = point3(13,2,3);
-            lookat = point3(0,0,0);
-            vfov = 20.0;
-            aperture = 0.1;
-            break;
+    // Camera
 
-        case 2:
-            world = two_spheres();
-            background = color(0.70, 0.80, 1.00);
-            lookfrom = point3(13,2,3);
-            lookat = point3(0,0,0);
-            vfov = 20.0;
-            break;
-        case 3:
-            world = two_perlin_spheres();
-            background = color(0.70, 0.80, 1.00);
-            lookfrom = point3(13,2,3);
-            lookat = point3(0,0,0);
-            vfov = 20.0;
-            break;
-        case 4:
-            world = earth();
-            background = color(0.70, 0.80, 1.00);
-            lookfrom = point3(13,2,3);
-            lookat = point3(0,0,0);
-            vfov = 20.0;
-            break;
-        case 5:
-            world = simple_light();
-            background = color(0,0,0);
-            lookfrom = point3(26,3,6);
-            lookat = point3(0,2,0);
-            vfov = 20.0;
-            break;
-        case 6:
-            world = cornell_box();
-            aspect_ratio = 1.0;
-            image_width = 600;
-            samples_per_pixel = 200;
-            background = color(0,0,0);
-            lookfrom = point3(278, 278, -800);
-            lookat = point3(278, 278, 0);
-            vfov = 40.0;
-            break;
-        case 7:
-            world = cornell_smoke();
-            aspect_ratio = 1.0;
-            image_width = 600;
-            samples_per_pixel = 200;
-            lookfrom = point3(278, 278, -800);
-            lookat = point3(278, 278, 0);
-            vfov = 40.0;
-            break;
-        default:
-        case 8:
-            world = final_scene();
-            aspect_ratio = 1.0;
-            image_width = 800;
-            samples_per_pixel = 1;
-            background = color(0,0,0);
-            lookfrom = point3(478, 278, -600);
-            lookat = point3(278, 278, 0);
-            vfov = 40.0;
-            break;
-    }
+    point3 lookfrom(278, 278, -800);
+    point3 lookat(278, 278, 0);
+    vec3 vup(0, 1, 0);
+    auto dist_to_focus = 10.0;
+    auto aperture = 0.0;
+    auto vfov = 40.0;
+    auto t0 = 0.0;
+    auto t1 = 1.0;
 
-    const int image_height = static_cast<int>(image_width / aspect_ratio);
+    camera cam(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, dist_to_focus, t0, t1);
 
+    // Render
 
-
-    auto bvh_tree = bvh_node(world, 0.0, 1.0); // add bvh structure
 
 
     std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 
-    vec3 vup(0,1,0);
-    auto dist_to_focus = 10.0;
 
-    camera cam(lookfrom, lookat, vup, vfov, aspect_ratio, aperture, dist_to_focus, 0.0, 1.0);
     // timer
     std::chrono::steady_clock sc;
     auto start = sc.now();
